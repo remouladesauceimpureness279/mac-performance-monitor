@@ -1,0 +1,76 @@
+# Contributing to MacPerfMonitor
+
+Thank you for your interest in improving MacPerfMonitor. This project aims to be a
+credible, auditable, no-telemetry macOS system tool, and contributions of all
+sizes are welcome.
+
+## Building and testing
+
+MacPerfMonitor builds with the Swift toolchain and needs no Apple Developer account or
+signing identity.
+
+```sh
+swift build          # compile everything
+swift test           # run the full test suite
+Scripts/run.sh       # build, bundle, ad-hoc sign, and launch the app
+```
+
+Use `Scripts/run.sh --release` to match the shipping build. Note that
+`swift build` alone does not refresh the `build/MacPerfMonitor.app` bundle; always use
+`Scripts/run.sh` when you want to launch your latest changes.
+
+**Requirements:** macOS 15 (Sequoia) or later and a Swift 6 toolchain (Xcode 16 or a
+Swift.org toolchain).
+
+## Linting and formatting
+
+The project uses the Swift toolchain's built-in formatter, configured by
+[.swift-format](.swift-format). Continuous integration runs it in strict mode,
+so please format before opening a pull request:
+
+```sh
+# Check for violations (this is what CI runs)
+swift format lint --strict --recursive Sources Tests Package.swift
+
+# Apply formatting in place
+swift format --in-place --recursive Sources Tests Package.swift
+```
+
+CI must stay green with no secrets and no code signing, so any fork gets a
+working build on the first try.
+
+## Coding conventions
+
+- **Swift 6 toolchain, Swift 5 language mode.** The package pins
+  `swiftLanguageModes: [.v5]` deliberately; keep new code compatible with it.
+- **Keep `MacPerfMonitorCore` free of SwiftUI.** The data layer (readers, models,
+  sampling, persistence, analysis) must build and be testable headlessly. Put
+  pure analysis in `Analysis/` and database-querying code in `Persistence/`. The
+  app target depends only on `MacPerfMonitorCore`.
+- **Test the data layer.** New analysis or persistence logic should come with
+  tests in `MacPerfMonitorCoreTests`. UI is verified manually.
+- **Logging.** Use the `AppLog` categories. Any log line you intend to rely on
+  as evidence after the fact must be `.notice` (persisted), not `.info` (which
+  ages out of the in-memory buffer).
+- **SPDX headers.** New source files should start with a single-line identifier:
+  `// SPDX-License-Identifier: MIT`.
+
+## Writing style for docs and copy
+
+User-facing copy and Markdown documentation in this repository **avoid the em
+dash**. Use a colon, a pair of commas, parentheses, or two separate sentences
+instead. This keeps the prose plain and consistent. The rule applies to product
+copy and docs; ordinary code comments are exempt.
+
+## Submitting changes
+
+1. Fork the repository and create a topic branch.
+2. Make your change, with tests where the data layer is involved.
+3. Run `swift test` and `swift format lint --strict` and make sure both pass.
+4. Update [CHANGELOG.md](CHANGELOG.md) under "Unreleased" if the change is
+   user-visible.
+5. Open a pull request using the template, describing what changed and why, and
+   how you verified it.
+
+By contributing, you agree that your contributions are licensed under the
+project's [MIT License](LICENSE).

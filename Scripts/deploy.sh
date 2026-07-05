@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+#
+# deploy.sh — cut a GitHub Release for the build currently in build/.
+#
+# Run it AFTER Scripts/install.sh (which bumps the build, builds, signs,
+# notarizes, staples, installs to /Applications and launches). deploy.sh does
+# NOT bump or rebuild — it packages and publishes the exact bundle now in build/,
+# so the build you just tested locally is the one users get, via BOTH channels:
+#
+#   • Sparkle (existing users)        -> <archive>.zip + appcast.xml (Release assets)
+#   • Manual download / Homebrew cask -> MacPerformanceMonitor.dmg   (Release asset)
+#
+# Everything is hosted on GitHub Releases — there is no private server. The app's
+# SUFeedURL points at releases/latest/download/appcast.xml, and every appcast
+# enclosure plus the DMG live as assets of the tagged release this script creates.
+# Signing/notarization stay LOCAL (on this Mac); only the publish step talks to
+# GitHub, so no Apple or Sparkle secrets ever leave the machine.
+#
+# The app bundle is Developer ID signed, notarized and stapled (by install.sh);
+# this script additionally notarizes + staples the DMG. It refuses to publish an
+# app that isn't already notarized + stapled.
+#
+# Usage:
+#   Scripts/deploy.sh [--skip-upload]
+#     --skip-upload   build the zip + DMG + appcast locally, but do NOT create the
+#                     GitHub Release (no gh calls). Handy for a dry run.
+#
+# Prerequisites:
+#   - build/Mac Performance Monitor.app: Developer ID signed, notarized, stapled
+#     (Scripts/install.sh leaves it so — never install.sh --skip-notarize).
+#   - notarytool keychain profile (NOTARY_PROFILE, default macperfmon-notary).
+#   - Sparkle EdDSA key: secrets/sparkle_private_key.pem (or the login keychain).
+#   - gh CLI authenticated with write access to $REPO (GITHUB_REPO to override).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# ---- configuration ---------------------------------------------------------
+APP_NAME="Mac Performance Monitor"
+APP="build/$APP_NAME.app"
+NOTARY_PROFILE="${NOTARY_PROFILE:-macperfmon-notary}"
+SPARKLE_TOOLS="Scripts/sparkle-tools"
+KEY_FILE="secrets/sparkle_private_key.pem"
+REPO="${GITHUB_REPO:-Zesty0wl/mac-performance-monitor}"
+PRODUCT_URL="https://macperformancemonitor.com"
+
+DIST_DIR="dist/updates"                    # Sparkle zip + appcast (fed to generate_appcast)
+DMG_DIR="dist"                             # the DMG, kept OUT of DIST_DIR
+ARCHIVE_BASENAME="MacPerformanceMonitor"   # no spaces — it ends up in a URL
+CASK="Casks/macperfmonitor.rb"
+
+# ---- argument parsing ------------------------------------------------------
+SKIP_UPLOAD=0
+for arg in "$@"; do
+  case "$arg" in
+    --skip-upload) SKIP_UPLOAD=1 ;;
+    *) echo "deploy.sh: unknown argument '$arg'" >&2; exit 2 ;;
+  esac
+done
+
+# ---- validate the built app ------------------------------------------------
+if [[ ! -d "$APP" ]]; then
+  echo "error: $APP not found. Build it first (Scripts/install.sh)." >&2
+  exit 1
+fi
+# Refuse to publish a build that isn't notarized + stapled: Sparkle downloaders
+# (and the DMG payload) verify Gatekeeper offline, so an unstapled build fails.
+if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
+  echo "error: $APP is not notarized + stapled." >&2
+  echo "       Run Scripts/install.sh (NOT --skip-notarize) before this." >&2
+  exit 1
+fi
+
+# ---- Sparkle EdDSA key (prompt-free file, else the login keychain) ---------
+ED_KEY_ARGS=()
+if [[ -f "$KEY_FILE" ]]; then
+  ED_KEY_ARGS=(--ed-key-file "$KEY_FILE")
+  echo "==> Using Sparkle key file: $KEY_FILE"
+else
+  echo "==> $KEY_FILE not found; generate_appcast will use the login keychain key."
+fi
+
+# ---- versions read from the bundle (no bump) -------------------------------
+INFO="$APP/Contents/Info.plist"
+SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")"
+STEM="${ARCHIVE_BASENAME}-${SHORT_VERSION}.${BUILD}"
+# One release per build. The tag embeds the build so successive builds of the same
+# short version never collide, and it is a 4-part string (not semver) so GitHub
+# will not mistake it for a pre-release; --latest below marks it the current one.
+TAG="v${SHORT_VERSION}.${BUILD}"
+# Baked into every enclosure URL in the appcast — points at THIS release's assets.
+DOWNLOAD_PREFIX="https://github.com/${REPO}/releases/download/${TAG}/"
+echo "==> Releasing $SHORT_VERSION (build $BUILD) as $TAG from $APP — no bump, no rebuild"
+
+# ---- 1) Sparkle update zip (only the current build → single-item appcast) --
+mkdir -p "$DIST_DIR"
+# Keep only THIS build in the feed dir so generate_appcast emits exactly one item
+# and no deltas (delta filenames contain spaces, which GitHub Releases would
+# rename — and full ~9 MB downloads are fine for a menu-bar app).
+rm -f "$DIST_DIR"/*.zip "$DIST_DIR"/*.delta "$DIST_DIR"/appcast.xml
+ARCHIVE="$DIST_DIR/${STEM}.zip"
+echo "==> Archiving Sparkle zip: $ARCHIVE"
+/usr/bin/ditto -c -k --keepParent "$APP" "$ARCHIVE"
+
+# ---- 2) drag-install DMG (manual download + Homebrew cask) -----------------
+# Stable name (no version) so releases/latest/download/MacPerformanceMonitor.dmg
+# always resolves for the website button; the per-tag URL feeds the cask. The app
+# inside is already notarized + stapled, so it launches offline after drag-install.
+mkdir -p "$DMG_DIR"
+DMG="$DMG_DIR/${ARCHIVE_BASENAME}.dmg"
+echo "==> Building DMG: $DMG"
+rm -f "$DMG"
+STAGE="$(mktemp -d)"
+/usr/bin/ditto "$APP" "$STAGE/$APP_NAME.app"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
+
+# ---- 3) notarize + staple the DMG ------------------------------------------
+echo "==> Notarizing the DMG (profile: $NOTARY_PROFILE — can take a few minutes)"
+SUBMIT="$(xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1)" || true
+echo "$SUBMIT"
+if ! grep -q "status: Accepted" <<<"$SUBMIT"; then
+  echo "error: DMG notarization did not return Accepted." >&2
+  SUBID="$(awk '/^[[:space:]]*id:/{print $2; exit}' <<<"$SUBMIT")"
+  if [[ -n "$SUBID" ]]; then
+    echo "       Apple's per-file reasons:" >&2
+    xcrun notarytool log "$SUBID" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+  fi
+  exit 1
+fi
+echo "==> Stapling the DMG"
+xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
+
+# ---- 4) regenerate the EdDSA-signed appcast (single zip, no deltas) ---------
+echo "==> Generating signed appcast"
+"$SPARKLE_TOOLS/generate_appcast" \
+  "${ED_KEY_ARGS[@]}" \
+  --download-url-prefix "$DOWNLOAD_PREFIX" \
+  --link "$PRODUCT_URL" \
+  "$DIST_DIR"
+echo "==> Appcast written: $DIST_DIR/appcast.xml"
+
+# ---- 5) point the Homebrew cask at this release ----------------------------
+DMG_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+if [[ -f "$CASK" ]]; then
+  echo "==> Updating $CASK -> version ${SHORT_VERSION}.${BUILD}, sha256 ${DMG_SHA}"
+  /usr/bin/sed -i '' -E \
+    -e "s/^  version \".*\"/  version \"${SHORT_VERSION}.${BUILD}\"/" \
+    -e "s/^  sha256 \".*\"/  sha256 \"${DMG_SHA}\"/" \
+    "$CASK"
+fi
+
+# ---- 6) publish the GitHub Release -----------------------------------------
+if [[ "$SKIP_UPLOAD" -eq 1 ]]; then
+  echo "==> --skip-upload set; built locally but not published:"
+  echo "    Sparkle zip: $ARCHIVE"
+  echo "    DMG:         $DMG  (sha256 $DMG_SHA)"
+  echo "    Appcast:     $DIST_DIR/appcast.xml"
+  exit 0
+fi
+
+echo "==> Creating GitHub Release $TAG on $REPO"
+if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+  echo "    release $TAG already exists — clobbering its assets"
+  gh release upload "$TAG" "$ARCHIVE" "$DIST_DIR/appcast.xml" "$DMG" --repo "$REPO" --clobber
+else
+  gh release create "$TAG" \
+    "$ARCHIVE" "$DIST_DIR/appcast.xml" "$DMG" \
+    --repo "$REPO" \
+    --title "Mac Performance Monitor ${SHORT_VERSION} (build ${BUILD})" \
+    --notes "Mac Performance Monitor ${SHORT_VERSION} (build ${BUILD}). See CHANGELOG.md for what's new." \
+    --latest
+fi
+
+echo
+echo "==> Released $SHORT_VERSION (build $BUILD) as $TAG."
+echo "    Appcast:  https://github.com/${REPO}/releases/latest/download/appcast.xml"
+echo "    Sparkle:  ${DOWNLOAD_PREFIX}$(basename "$ARCHIVE")"
+echo "    Download: https://github.com/${REPO}/releases/latest/download/${ARCHIVE_BASENAME}.dmg"
+echo "    Commit the updated $CASK (version + sha256) so brew resolves this build."
+echo "    Sparkle clients pick it up on next cold start / wake / 24h check."

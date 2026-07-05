@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Mac Performance Monitor</string>
+	<key>CFBundleExecutable</key>
+	<string>Mac Performance Monitor</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>uk.co.bzwrd.macperfmonitor</string>
+	<key>CFBundleName</key>
+	<string>Mac Performance Monitor</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.4</string>
+	<key>CFBundleVersion</key>
+	<string>117</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppSleepDisabled</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Mac Performance Monitor. No telemetry. All data stays on your Mac.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Zesty0wl/mac-performance-monitor/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>HuKDMlLqkj1/pq6IuuIBLBAo0XVdRVCA8fdABu3Kh2M=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+</dict>
+</plist>
