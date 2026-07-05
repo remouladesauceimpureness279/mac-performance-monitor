@@ -64,24 +64,12 @@ Top consumers over your chosen window, by average or peak footprint:
 
 ## Install
 
-### Notarised build
+### Notarised installer
 
-Download the latest notarised, stapled DMG from the
-[Releases](../../releases) page, open it, and drag MacPerfMonitor to Applications.
-Because it is signed with a Developer ID and notarised by Apple, it launches
-without security warnings.
-
-### Homebrew
-
-A cask is provided in [Casks/macperfmonitor.rb](Casks/macperfmonitor.rb), pointing at the
-GitHub Release DMG:
-
-```sh
-brew install --cask Zesty0wl/tap/macperfmonitor
-```
-
-(Once the tap is published. The cask installs the same notarised build as the
-direct download.)
+Download the latest notarised, stapled installer (`MacPerformanceMonitor.pkg`) from the
+[Releases](../../releases) page and double-click it to install into Applications. Because
+it is signed with a Developer ID and notarised by Apple, it installs and launches without
+security warnings.
 
 ### Build from source
 
