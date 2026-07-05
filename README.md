@@ -33,9 +33,25 @@ Free and open source. No telemetry. Every sample stays on your Mac.
 
 ## Screenshots
 
-![Process explorer](docs/images/processes.png)
+Process explorer, with a per-process detail inspector:
 
-![History](docs/images/history.png)
+![Processes](docs/images/processes.png)
+
+Energy: battery health, an energy-flow view, and the top energy users:
+
+![Energy](docs/images/energy.png)
+
+Network throughput and every adapter on the machine:
+
+![Network](docs/images/network.png)
+
+Analytics: build your own per-process charts over any window:
+
+![Analytics](docs/images/analytics.png)
+
+Insights: what changed, pressure events, and the heaviest consumers:
+
+![Insights](docs/images/insights.png)
 
 ## Install
 
